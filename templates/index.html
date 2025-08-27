@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF SUMMARIZER (RAG)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 880px; margin: 32px auto; padding: 0 16px; }
+    h1 { margin-bottom: 8px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; }
+    button:hover { background: #eee; }
+    input[type="text"] { width: 100%; max-width: 520px; padding: 10px 12px; border-radius: 10px; border: 1px solid #ccc; }
+    pre { white-space: pre-wrap; background: #fafafa; border: 1px solid #eee; padding: 12px; border-radius: 10px; }
+    .muted { color: #666; font-size: 0.95rem; }
+    .small { font-size: 0.9rem; }
+    .tag { display: inline-block; padding: 3px 8px; border: 1px solid #ddd; border-radius: 999px; margin-right: 6px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>PDF SUMMARIZER</h1>
+  <p class="muted">Upload a PDF once, then ask questions grounded in the document. Works with large PDFs via chunking + retrieval.</p>
+
+  <div class="card">
+    <h3>1) Upload PDF</h3>
+    <div class="row">
+      <input type="file" id="pdfInput" accept="application/pdf" />
+      <button onclick="uploadPDF()">Upload</button>
+      <span id="uploadStatus" class="muted"></span>
+    </div>
+    <div id="previewBox" class="small"></div>
+  </div>
+
+  <div class="card">
+    <h3>2) Ask a question</h3>
+    <div class="row">
+      <input type="text" id="questionInput" placeholder="Type your question about the PDF..." />
+      <button onclick="askQuestion()">Ask</button>
+      <span id="askStatus" class="muted"></span>
+    </div>
+    <div id="metaBox" class="small"></div>
+    <h4>Answer</h4>
+    <pre id="answerBox"></pre>
+  </div>
+
+  <script>
+    async function uploadPDF() {
+      const fileInput = document.getElementById("pdfInput");
+      const status = document.getElementById("uploadStatus");
+      const previewBox = document.getElementById("previewBox");
+      status.textContent = "";
+      previewBox.textContent = "";
+
+      if (!fileInput.files.length) {
+        alert("Please select a PDF file");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("pdf", fileInput.files[0]);
+
+      status.textContent = "Uploading & indexing...";
+      try {
+        const res = await fetch("/upload", {
+          method: "POST",
+          body: formData,
+          credentials: "include"   // keep session cookie
+        });
+        const data = await res.json();
+        if (!data.success) {
+          status.textContent = "❌ " + (data.error || "Upload failed");
+          return;
+        }
+        status.textContent = "✅ " + data.message + ` (Chunks: ${data.num_chunks})`;
+        previewBox.innerHTML = `<div class="tag">Preview</div><pre>${data.preview}</pre>`;
+      } catch (e) {
+        status.textContent = "❌ Upload failed: " + e.message;
+      }
+    }
+
+    async function askQuestion() {
+      const q = document.getElementById("questionInput").value.trim();
+      const askStatus = document.getElementById("askStatus");
+      const answerBox = document.getElementById("answerBox");
+      const metaBox = document.getElementById("metaBox");
+      askStatus.textContent = "";
+      answerBox.textContent = "";
+      metaBox.textContent = "";
+
+      if (!q) {
+        alert("Enter a question!");
+        return;
+      }
+
+      askStatus.textContent = "Thinking...";
+      try {
+        const res = await fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: q }),
+          credentials: "include"  // keep session cookie
+        });
+        const data = await res.json();
+        if (!data.success) {
+          askStatus.textContent = "❌ " + (data.error || "Request failed");
+          return;
+        }
+        askStatus.textContent = "✅ Done";
+        if (data.used_chunks && data.used_chunks.length) {
+          metaBox.innerHTML = `<div class="tag">Used Chunks: ${data.used_chunks.join(", ")}</div>`;
+        }
+        answerBox.textContent = data.answer || "";
+      } catch (e) {
+        askStatus.textContent = "❌ Request failed: " + e.message;
+      }
+    }
+  </script>
+</body>
+</html>
